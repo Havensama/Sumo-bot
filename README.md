@@ -1,6 +1,9 @@
 # Sumo-bot
 
-Autonomous sumo robot for Arduino Uno. The sketch is in [`sumo_bot/sumo_bot.ino`](sumo_bot/sumo_bot.ino).
+Autonomous sumo robot for Arduino Uno.
+
+- [`sumo_bot/sumo_bot.ino`](sumo_bot/sumo_bot.ino): the fighting code.
+- [`sumobot_tester/sumobot_tester.ino`](sumobot_tester/sumobot_tester.ino): bench tester for the Sharp sensors, line sensors and motors (Serial Monitor, 9600 baud). Both sketches use the same wiring.
 
 ## Hardware
 
@@ -8,7 +11,7 @@ Autonomous sumo robot for Arduino Uno. The sketch is in [`sumo_bot/sumo_bot.ino`
 - 2x BTS7960 (IBT-2) motor driver, one per motor
 - 2x 12V 280RPM DC motor
 - 3x SHARP IR distance sensor 10-80cm (GP2Y0A21, analog)
-- 2x single line sensor (TCRT5000 type, digital DO output)
+- 2x single line sensor (analog output)
 - 1x start switch (5 second delayed start)
 - 3S 11.1V LiPo
 
@@ -18,30 +21,32 @@ Autonomous sumo robot for Arduino Uno. The sketch is in [`sumo_bot/sumo_bot.ino`
 |---|---|---|
 | Left BTS7960 | RPWM | D5 |
 | | LPWM | D6 |
-| | R_EN + L_EN (joined) | D7 |
-| | VCC / GND | 5V / GND |
+| | R_EN, L_EN, VCC | 5V (each its own wire) |
+| | GND | GND |
 | | B+ / B- | Battery + / - |
 | | M+ / M- | Left motor |
 | Right BTS7960 | RPWM | D9 |
 | | LPWM | D10 |
-| | R_EN + L_EN (joined) | D8 |
-| | VCC / GND | 5V / GND |
+| | R_EN, L_EN, VCC | 5V (each its own wire) |
+| | GND | GND |
 | | B+ / B- | Battery + / - |
 | | M+ / M- | Right motor |
-| SHARP IR (yellow wire) | Left | A0 |
+| SHARP IR (yellow wire) | Right | A0 |
 | | Front | A1 |
-| | Right | A2 |
-| Line sensor (DO) | Left | D2 |
-| | Right | D3 |
+| | Left | A2 |
+| Line sensor (analog) | Left | A4 |
+| | Right | A5 |
 | Start switch | one leg / other leg | D4 / GND |
 | Status LED | built-in | D13 |
+
+"Left" and "right" are as seen from behind the bot, looking forward.
 
 **Power:** battery + goes to both BTS7960 B+ and the Arduino VIN (or DC jack); battery - goes to both B- and Arduino GND. All grounds must be connected together.
 
 ## How it works
 
 1. Power on. The LED is off and the robot waits.
-2. Press the switch: 5 second countdown (LED blinks).
+2. Place the bot in the ring and press the switch: 5 second countdown (LED blinks). During the last second the line sensors calibrate on the black ring, so keep the bot still on black.
 3. Fight (LED on). Press the switch again to stop.
 
 If your switch is an ON/OFF toggle instead of a push button, set `START_SWITCH_IS_TOGGLE` to `1`: ON starts the countdown, OFF stops.
@@ -58,7 +63,7 @@ While the robot is waiting, open the Serial Monitor at 9600 baud:
 All settings are at the top of the sketch:
 
 - `LEFT_MOTOR_REVERSED` / `RIGHT_MOTOR_REVERSED`: set to `1` if a wheel spins the wrong way.
-- `LINE_DETECTED_STATE`: `LOW` for a white border on most TCRT5000 modules; change to `HIGH` if the line reads backwards.
+- `EDGE_MARGIN`: how much a line sensor reading must change from black to count as the white line (use the tester to pick a value).
 - `FRONT_ATTACK_DISTANCE` / `SIDE_ATTACK_DISTANCE`: how far (cm) the robot reacts to an enemy.
 - `ESCAPE_BACK_TIME` / `ESCAPE_TURN_TIME`: how far it backs up and turns at the edge.
 - `attackSpeed`, `turnAttackSpeed`, `searchSpeed`, `escapeSpeed`: motor speeds (0-255).

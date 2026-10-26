@@ -8,15 +8,17 @@ HARDWARE
 - 2x BTS7960 (IBT-2) motor driver, one per motor
 - 2x 12V 280RPM DC motor
 - 3x SHARP IR distance sensor 10-80cm (GP2Y0A21, analog)
-- 2x single line sensor (TCRT5000 type, digital DO output)
+- 2x single line sensor (analog output)
 - 1x start switch (5 second delay before fighting)
 - 3S 11.1V LiPo
+
+Same wiring as sumobot_tester.ino.
+"Left" and "right" = as seen from behind the bot, looking forward.
 
 BTS7960 LEFT MOTOR
 RPWM      - D5
 LPWM      - D6
-R_EN+L_EN - D7   (join both EN pins together)
-VCC       - 5V
+R_EN, L_EN, VCC - 5V (each with its own wire)
 GND       - GND
 B+ / B-   - Battery + / -
 M+ / M-   - Left motor
@@ -24,20 +26,21 @@ M+ / M-   - Left motor
 BTS7960 RIGHT MOTOR
 RPWM      - D9
 LPWM      - D10
-R_EN+L_EN - D8   (join both EN pins together)
-VCC       - 5V
+R_EN, L_EN, VCC - 5V (each with its own wire)
 GND       - GND
 B+ / B-   - Battery + / -
 M+ / M-   - Right motor
 
 SHARP IR (Red = 5V, Black = GND, Yellow = signal)
-LEFT  - A0
+RIGHT - A0
 FRONT - A1
-RIGHT - A2
+LEFT  - A2
 
-LINE SENSORS (DO pin)
-LEFT  - D2
-RIGHT - D3
+LINE SENSORS (analog)
+LEFT  - A4
+RIGHT - A5
+Calibrated on BLACK during the last second of the countdown,
+so the bot must sit still inside the ring before it starts.
 
 START SWITCH
 One leg - D4
@@ -69,21 +72,19 @@ FEATURES:
 // Left motor driver (BTS7960)
 #define LEFT_RPWM 5
 #define LEFT_LPWM 6
-#define LEFT_EN 7
 
 // Right motor driver (BTS7960)
 #define RIGHT_RPWM 9
 #define RIGHT_LPWM 10
-#define RIGHT_EN 8
 
 // SHARP IR sensors
-#define SHARP_LEFT A0
+#define SHARP_RIGHT A0
 #define SHARP_FRONT A1
-#define SHARP_RIGHT A2
+#define SHARP_LEFT A2
 
 // Line sensors
-#define LINE_LEFT 2
-#define LINE_RIGHT 3
+#define LINE_LEFT A4
+#define LINE_RIGHT A5
 
 // Start switch
 #define START_SWITCH 4
@@ -104,12 +105,18 @@ FEATURES:
 
 // ================= LINE CONFIGURATION =================
 
-// What the line sensor DO pin outputs when it is ON the line.
-// Most TCRT5000 modules output LOW over WHITE.
-//   White border line -> LOW
-//   Black border line -> HIGH
-// Check with the Serial Monitor sensor test and change if needed.
-#define LINE_DETECTED_STATE LOW
+// How much a line sensor reading must change from the black
+// baseline to count as the white line (same as the tester).
+#define EDGE_MARGIN 150
+
+// Black baseline, measured during the countdown
+int lineBaseLeft = 0;
+int lineBaseRight = 0;
+bool lineCalibrated = false;
+
+long lineSumLeft = 0;
+long lineSumRight = 0;
+long lineSamples = 0;
 
 
 // ================= MOTOR DIRECTION =================
@@ -215,22 +222,11 @@ void setup() {
 
   pinMode(LEFT_RPWM, OUTPUT);
   pinMode(LEFT_LPWM, OUTPUT);
-  pinMode(LEFT_EN, OUTPUT);
 
   pinMode(RIGHT_RPWM, OUTPUT);
   pinMode(RIGHT_LPWM, OUTPUT);
-  pinMode(RIGHT_EN, OUTPUT);
 
   stopMove();
-
-  digitalWrite(LEFT_EN, HIGH);
-  digitalWrite(RIGHT_EN, HIGH);
-
-
-  // ================= SENSOR PINS =================
-
-  pinMode(LINE_LEFT, INPUT);
-  pinMode(LINE_RIGHT, INPUT);
 
 
   // ================= SWITCH / LED =================
@@ -350,6 +346,10 @@ void startCountdown() {
   countdownStart = millis();
   lastCountdownSecond = -1;
 
+  lineSumLeft = 0;
+  lineSumRight = 0;
+  lineSamples = 0;
+
   Serial.println(F("DELAY MODE: COUNTDOWN"));
 }
 
@@ -377,9 +377,32 @@ void countdownMode() {
   unsigned long elapsed = millis() - countdownStart;
 
 
+  // ================= LINE CALIBRATION =================
+
+  // Last second of the countdown: the bot sits still on BLACK
+  if (elapsed >= START_DELAY - 1000 && elapsed < START_DELAY) {
+
+    lineSumLeft += analogRead(LINE_LEFT);
+    lineSumRight += analogRead(LINE_RIGHT);
+    lineSamples++;
+  }
+
+
   // ================= START FIGHT =================
 
   if (elapsed >= START_DELAY) {
+
+    if (lineSamples > 0) {
+
+      lineBaseLeft = lineSumLeft / lineSamples;
+      lineBaseRight = lineSumRight / lineSamples;
+      lineCalibrated = true;
+    }
+
+    Serial.print(F("Black baseline  L: "));
+    Serial.print(lineBaseLeft);
+    Serial.print(F("  R: "));
+    Serial.println(lineBaseRight);
 
     robotState = STATE_FIGHT;
 
@@ -573,8 +596,17 @@ void search() {
 
 void readLineSensors() {
 
-  lineLeft = (digitalRead(LINE_LEFT) == LINE_DETECTED_STATE);
-  lineRight = (digitalRead(LINE_RIGHT) == LINE_DETECTED_STATE);
+  // No black baseline yet = can't tell where the line is
+  if (!lineCalibrated) {
+
+    lineLeft = false;
+    lineRight = false;
+
+    return;
+  }
+
+  lineLeft = abs(analogRead(LINE_LEFT) - lineBaseLeft) > EDGE_MARGIN;
+  lineRight = abs(analogRead(LINE_RIGHT) - lineBaseRight) > EDGE_MARGIN;
 }
 
 
@@ -599,15 +631,16 @@ int readSharp(byte pin) {
   raw /= 4;
 
 
-  // Below ~0.4V = farther than 80cm = nothing there
-  if (raw < 82) {
+  float volts = raw * (5.0 / 1023.0);
+
+  // Below 0.4V = farther than 80cm = nothing there
+  if (volts < 0.4) {
     return 0;
   }
 
 
-  // GP2Y0A21 voltage -> distance curve
-  float volts = raw * (5.0 / 1023.0);
-  int cm = 27.728 * pow(volts, -1.2045);
+  // GP2Y0A21 voltage -> distance curve (same as the tester)
+  int cm = 27.86 * pow(volts, -1.15);
 
   if (cm > 80) {
     return 0;
@@ -691,11 +724,18 @@ void idleMode() {
   Serial.print(F("  R: "));
   printDistance(rightDistance);
 
+  // Raw values; WHITE/black only shows after the first countdown
   Serial.print(F("  | LINE L: "));
-  Serial.print(lineLeft ? F("YES") : F("no "));
+  Serial.print(analogRead(LINE_LEFT));
+  if (lineCalibrated) {
+    Serial.print(lineLeft ? F(" WHITE") : F(" black"));
+  }
 
   Serial.print(F("  LINE R: "));
-  Serial.print(lineRight ? F("YES") : F("no "));
+  Serial.print(analogRead(LINE_RIGHT));
+  if (lineCalibrated) {
+    Serial.print(lineRight ? F(" WHITE") : F(" black"));
+  }
 
   Serial.print(F("  | SWITCH: "));
   Serial.println(switchOn ? F("ON") : F("OFF"));
