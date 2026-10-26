@@ -42,12 +42,13 @@ RIGHT - A5
 Calibrated on BLACK during the last second of the countdown,
 so the bot must sit still inside the ring before it starts.
 
-START SWITCH
+START SWITCH (optional, see USE_START_SWITCH)
 One leg - D4
 Other leg - GND
+No switch = the 5 second countdown starts as soon as the bot is powered on.
 
 STATUS LED - D13 (built-in LED)
-  OFF        = waiting for switch
+  OFF        = waiting (stopped)
   BLINKING   = 5 second countdown
   ON         = fighting
 
@@ -57,8 +58,9 @@ Battery - -> both BTS7960 B- and Arduino GND
 ALL GROUNDS MUST BE CONNECTED TOGETHER.
 
 FEATURES:
-- 5 second delayed start with switch
+- 5 second delayed start (at power on, or with a switch)
 - Switch again (or turn toggle OFF) = emergency stop
+- Serial Monitor: x = stop, g = start countdown
 - Line escape (back up + turn away from the edge)
 - Enemy tracking with 3 SHARP IR sensors
 - Searches toward the side the enemy was last seen
@@ -94,6 +96,10 @@ FEATURES:
 
 
 // ================= SWITCH CONFIGURATION =================
+
+// 0 = NO SWITCH : countdown starts right after power on / reset
+// 1 = SWITCH on D4 (type set below)
+#define USE_START_SWITCH 0
 
 // 0 = PUSH BUTTON : press = start countdown, press again = stop
 // 1 = TOGGLE      : ON = start countdown, OFF = stop
@@ -242,7 +248,13 @@ void setup() {
 
 
   Serial.println(F("SUMOBOT READY"));
-  Serial.println(F("Motor test: f = forward, b = backward, l = left, r = right"));
+  Serial.println(F("x = stop, g = start countdown"));
+  Serial.println(F("Motor test (when stopped): f = forward, b = backward, l = left, r = right"));
+
+#if !USE_START_SWITCH
+  // No switch: start the 5 second countdown right away
+  startCountdown();
+#endif
 }
 
 
@@ -250,7 +262,21 @@ void setup() {
 
 void loop() {
 
+#if USE_START_SWITCH
   handleSwitch();
+#endif
+
+
+  // ================= SERIAL STOP =================
+
+  if (robotState != STATE_IDLE && Serial.available()) {
+
+    char command = Serial.read();
+
+    if (command == 'x' || command == 'X') {
+      stopRobot();
+    }
+  }
 
 
   // ================= WAITING =================
@@ -670,6 +696,11 @@ void idleMode() {
     char command = Serial.read();
 
     switch (command) {
+
+      case 'g':
+      case 'G':
+        startCountdown();
+        return;
 
       case 'f':
       case 'F':

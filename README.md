@@ -12,7 +12,7 @@ Autonomous sumo robot for Arduino Uno.
 - 2x 12V 280RPM DC motor
 - 3x SHARP IR distance sensor 10-80cm (GP2Y0A21, analog)
 - 2x single line sensor (analog output)
-- 1x start switch (5 second delayed start)
+- Start switch: optional (not fitted yet)
 - 3S 11.1V LiPo
 
 ## Wiring
@@ -36,7 +36,7 @@ Autonomous sumo robot for Arduino Uno.
 | | Left | A2 |
 | Line sensor (analog) | Left | A4 |
 | | Right | A5 |
-| Start switch | one leg / other leg | D4 / GND |
+| Start switch (optional) | one leg / other leg | D4 / GND |
 | Status LED | built-in | D13 |
 
 "Left" and "right" are as seen from behind the bot, looking forward.
@@ -45,15 +45,25 @@ Autonomous sumo robot for Arduino Uno.
 
 ## How it works
 
-1. Power on. The LED is off and the robot waits.
-2. Place the bot in the ring and press the switch: 5 second countdown (LED blinks). During the last second the line sensors calibrate on the black ring, so keep the bot still on black.
-3. Fight (LED on). Press the switch again to stop.
+**No switch (default, `USE_START_SWITCH 0`):**
 
-If your switch is an ON/OFF toggle instead of a push button, set `START_SWITCH_IS_TOGGLE` to `1`: ON starts the countdown, OFF stops.
+1. Place the bot in the ring and power it on (or press the Uno's reset button).
+2. The 5 second countdown starts right away (LED blinks). During the last second the line sensors calibrate on the black ring, so keep the bot still on black.
+3. Fight (LED on). To stop it, switch off the battery. Pressing reset restarts the countdown, so it does **not** stop the bot.
+
+On USB, type `x` in the Serial Monitor to stop and `g` to start the countdown again. **Lift the wheels when plugging in on the bench**: the motors start 5 seconds after power on.
+
+**With a switch (`USE_START_SWITCH 1`, switch between D4 and GND):**
+
+1. Power on. The LED is off and the robot waits.
+2. Place the bot in the ring and press the switch: 5 second countdown, then fight.
+3. Press the switch again to stop.
+
+If your switch is an ON/OFF toggle instead of a push button, also set `START_SWITCH_IS_TOGGLE` to `1`: ON starts the countdown, OFF stops.
 
 ## Testing
 
-While the robot is waiting, open the Serial Monitor at 9600 baud:
+Use `sumobot_tester.ino` for bench tests. The main sketch also has a test while stopped (type `x` first): open the Serial Monitor at 9600 baud:
 
 - Sensor readings are printed every 250ms.
 - Type `f`, `b`, `l` or `r` to run the motors forward, backward, left or right for half a second.
